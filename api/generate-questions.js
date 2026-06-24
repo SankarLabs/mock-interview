@@ -3,11 +3,31 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { resumeText, resumeParsed, jobDescription, interviewType } = req.body
+  const { resumeText, resumeParsed, jobDescription, interviewType, difficulty = 'medium', company = 'Any' } = req.body
 
   if (!interviewType) {
     return res.status(400).json({ error: 'interviewType is required' })
   }
+
+  const COMPANY_STYLES = {
+    Google:    'Google values elegant solutions, clean code, and deep scalability. Expect system design and algorithm depth.',
+    Meta:      'Meta focuses on impact at scale, data-heavy systems, and execution speed. Measurable outcomes matter.',
+    Amazon:    'Amazon uses Leadership Principles (Customer Obsession, Ownership, Bias for Action). Behavioral answers should follow STAR format.',
+    Microsoft: 'Microsoft values growth mindset, collaboration, and practical problem-solving. Mix of coding and design.',
+    Apple:     'Apple values quality, attention to detail, and user experience. Questions focus on craftsmanship and reliability.',
+    Netflix:   'Netflix hires senior talent with strong judgment. Questions test context-over-process and freedom with responsibility.',
+    Startup:   'Startup interviews value pragmatic thinking, full-stack awareness, and shipping quality product fast.',
+  }
+
+  const DIFFICULTY_RULES = {
+    easy:   'Generate straightforward questions for a junior/entry-level candidate. Focus on core concepts, no complex edge cases.',
+    medium: 'Generate moderately challenging questions for a mid-level candidate. Include depth and trade-off reasoning.',
+    hard:   'Generate challenging senior-level questions. Expect deep expertise, edge cases, architectural trade-offs, and real-world complexity.',
+  }
+
+  const companySection = company && company !== 'Any'
+    ? `\nCompany context: This is a ${company} interview. ${COMPANY_STYLES[company] || ''}`
+    : ''
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
@@ -47,6 +67,7 @@ ${jobDescription ? '- Prioritize the skills and requirements from the job descri
 ${resumeSection}
 
 Interview Type: ${interviewType}
+Difficulty: ${difficulty} — ${DIFFICULTY_RULES[difficulty] || DIFFICULTY_RULES.medium}${companySection}
 
 Rules:
 ${personalizationRule}
@@ -54,6 +75,7 @@ ${personalizationRule}
 - For "Coding (DSA)": ask algorithm problems relevant to their domain
 - For "Behavioral (STAR)": ask situation-based questions about their past experiences
 - For "Mixed": mix all types
+- All questions must match the "${difficulty}" difficulty level above
 
 Return ONLY valid JSON, no markdown, no explanation, exactly this structure:
 {
@@ -75,11 +97,15 @@ Return ONLY valid JSON, no markdown, no explanation, exactly this structure:
 
   const MODELS = [
     'meta-llama/llama-3.3-70b-instruct:free',
-    'openai/gpt-oss-20b:free',
+    'openai/gpt-oss-120b:free',
+    'google/gemma-4-31b-it:free',
     'qwen/qwen3-coder:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
+    'openai/gpt-oss-20b:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
+    'nvidia/nemotron-3-nano-30b-a3b:free',
     'meta-llama/llama-3.2-3b-instruct:free',
-    'nousresearch/hermes-3-llama-3.1-405b:free',
   ]
 
   const delay = (ms) => new Promise(r => setTimeout(r, ms))

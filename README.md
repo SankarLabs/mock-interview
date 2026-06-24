@@ -14,6 +14,7 @@ A web app that gives you a real interview experience: upload your resume, paste 
 
 - **Resume-aware questions** — Upload your PDF resume and get 4 questions tailored to your actual stack (React, AWS, PostgreSQL, etc.)
 - **Job description targeting** — Paste a JD to get questions specific to that role and company
+- **Live job matches** — Dedicated page pulling real, current postings (via JSearch/Google for Jobs) ranked by % match against your resume's skills, title, and experience
 - **4 interview types** — System Design · Coding (DSA) · Behavioral (STAR) · Mixed
 - **Voice or text answers** — Speak via Web Speech API or type your answer
 - **Live transcript** — Real-time speech-to-text as you speak
@@ -118,6 +119,7 @@ Open [http://localhost:5173](http://localhost:5173) — the `/api` routes work a
 | Variable | Description |
 |----------|-------------|
 | `OPENROUTER_API_KEY` | Your OpenRouter API key (`sk-or-...`) |
+| `RAPIDAPI_KEY` | RapidAPI key subscribed to the [JSearch API](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch) (free Basic plan, 200 req/mo) — powers the live Job Matches page |
 
 Create `.env.local` locally. On Vercel, add it under **Project → Settings → Environment Variables**.
 
@@ -160,7 +162,7 @@ Home → Setup → Interview → Results (×4) → Final Summary
 
 ## AI Models (Free Tier)
 
-Both `generate-questions` and `grade-answer` try these models in order, falling back on rate limits (429) or unavailability (404):
+All three API routes (`generate-questions`, `grade-answer`, `get-hint`) try these models in order, falling back on rate limits (429) or unavailability (404):
 
 1. `meta-llama/llama-3.3-70b-instruct:free`
 2. `openai/gpt-oss-20b:free`
@@ -170,6 +172,25 @@ Both `generate-questions` and `grade-answer` try these models in order, falling 
 6. `nousresearch/hermes-3-llama-3.1-405b:free`
 
 > Free tier has rate limits. Adding $1 of credits to your OpenRouter account removes them entirely.
+
+### How the Multi-Model Fallback Works
+
+OpenRouter exposes all models through a single API endpoint — switching models is just changing one field (`model`) in the request body. No different SDKs or credentials needed.
+
+**Loop logic (same in all three API files):**
+
+```
+for each model in the list:
+  → Call OpenRouter with that model
+  → 429 (rate limited)   → wait 600ms, try next model
+  → 404 (unavailable)    → try next model immediately
+  → any other HTTP error → stop, don't retry
+  → empty response       → try next model
+  → valid response       → use it, break out of loop
+```
+
+**Why 6 models?**
+Free-tier models have per-minute rate limits and occasionally go offline. With 6 fallbacks at least one is almost always available, so users rarely see an error. The 600ms delay between retries avoids hammering the API when a model is rate-limited.
 
 ---
 

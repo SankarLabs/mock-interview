@@ -14,6 +14,7 @@ export default function Setup() {
   const navigate = useNavigate()
   const {
     resumeText, resumeParsed, jobDescription, interviewType,
+    difficulty, company,
     questions, setQuestions,
     candidateProfile, setCandidateProfile,
     setCurrentQuestionIndex, clearAnswers,
@@ -21,6 +22,23 @@ export default function Setup() {
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [rawApiProfile, setRawApiProfile] = useState(null)
+
+  // Merge API profile + resumeParsed reactively so we always use the latest context value,
+  // avoiding stale-closure issues with the async generateQuestions function.
+  useEffect(() => {
+    if (!rawApiProfile) return
+    setCandidateProfile({
+      name: (resumeParsed?.name && resumeParsed.name !== 'Candidate')
+        ? resumeParsed.name
+        : rawApiProfile.name || 'Candidate',
+      level: rawApiProfile.level || 'mid',
+      topSkills: resumeParsed?.skills?.length > 0
+        ? resumeParsed.skills
+        : (rawApiProfile.topSkills || []),
+      yearsExperience: resumeParsed?.yearsExp || rawApiProfile.yearsExperience || 0,
+    })
+  }, [rawApiProfile, resumeParsed])
 
   useEffect(() => {
     if (questions.length === 0) generateQuestions()
@@ -30,12 +48,13 @@ export default function Setup() {
     setIsLoading(true)
     setError(null)
     setQuestions([])
+    setRawApiProfile(null)
     setCandidateProfile(null)
     try {
       const response = await fetch('/api/generate-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resumeText, resumeParsed, jobDescription, interviewType }),
+        body: JSON.stringify({ resumeText, resumeParsed, jobDescription, interviewType, difficulty, company }),
       })
       let data
       try { data = await response.json() }
@@ -43,13 +62,7 @@ export default function Setup() {
       if (!response.ok) throw new Error(data.error || 'Failed to generate questions')
 
       setQuestions(data.questions || [])
-      const apiProfile = data.candidateProfile || {}
-      setCandidateProfile({
-        name: resumeParsed?.name || apiProfile.name || 'Candidate',
-        level: apiProfile.level || 'mid',
-        topSkills: resumeParsed?.skills?.length ? resumeParsed.skills : (apiProfile.topSkills || []),
-        yearsExperience: resumeParsed?.yearsExp || apiProfile.yearsExperience || 0,
-      })
+      setRawApiProfile(data.candidateProfile || {})
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
     } finally {
@@ -69,7 +82,7 @@ export default function Setup() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 pt-5 pb-3 max-w-6xl mx-auto w-full">
         <button onClick={() => navigate('/')} className="text-white/40 hover:text-white text-sm transition-colors">← Back</button>
-        <span className="text-white/50 text-sm">{interviewType} · 4 questions</span>
+        <span className="text-white/50 text-sm">{interviewType} · {difficulty} · {company !== 'Any' ? company : '4 questions'}</span>
         <button
           onClick={generateQuestions}
           disabled={isLoading}

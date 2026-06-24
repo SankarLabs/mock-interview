@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useApp } from '../App.jsx'
 import CameraView from '../components/CameraView.jsx'
 import TranscriptBox from '../components/TranscriptBox.jsx'
+import CodeEditor from '../components/CodeEditor.jsx'
 import { useCamera } from '../hooks/useCamera.js'
 import { useSpeech } from '../hooks/useSpeech.js'
 import { useTimer } from '../hooks/useTimer.js'
@@ -14,9 +15,29 @@ const DIFF_COLORS = {
   hard: 'text-red-400 bg-red-400/10',
 }
 
+const FILLER_WORDS = ['um', 'uh', 'hmm', 'like', 'you know', 'kind of', 'sort of', 'i mean', 'literally']
+
+function countFillerWords(text) {
+  const lower = text.toLowerCase()
+  let total = 0
+  const found = {}
+  for (const filler of FILLER_WORDS) {
+    let count = 0
+    if (filler.includes(' ')) {
+      let pos = 0
+      while ((pos = lower.indexOf(filler, pos)) !== -1) { count++; pos++ }
+    } else {
+      count = (lower.match(new RegExp(`\\b${filler}\\b`, 'g')) || []).length
+    }
+    if (count > 0) { found[filler] = count; total += count }
+  }
+  return { total, found }
+}
+
 export default function Interview() {
   const navigate = useNavigate()
   const { questions, interviewType, currentQuestionIndex, addAnswer } = useApp()
+  const isCodingType = interviewType === 'Coding (DSA)'
 
   const { videoRef, start: startCamera, stop: stopCamera, error: cameraError, isActive: cameraActive } = useCamera()
   const { speak, stop: stopTTS, isSpeaking } = useTTS()
@@ -27,7 +48,8 @@ export default function Interview() {
   const [isGrading, setIsGrading] = useState(false)
   const [gradeError, setGradeError] = useState(null)
   const [typedAnswer, setTypedAnswer] = useState('')
-  const [answerMode, setAnswerMode] = useState('voice')
+  const [codeAnswer, setCodeAnswer] = useState('')
+  const [answerMode, setAnswerMode] = useState(isCodingType ? 'code' : 'voice')
   const [showRubric, setShowRubric] = useState(false)
   const [hints, setHints] = useState(null)
   const [hintLoading, setHintLoading] = useState(false)
@@ -88,6 +110,8 @@ export default function Interview() {
     const spokenText = stopSpeech()
     const answerText = answerMode === 'text'
       ? typedAnswer.trim() || '(No answer provided)'
+      : answerMode === 'code'
+      ? codeAnswer.trim() || '(No code written)'
       : spokenText || transcript || '(No answer recorded)'
 
     setIsGrading(true)
@@ -106,7 +130,8 @@ export default function Interview() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to grade answer')
-      addAnswer({ ...data, transcript: answerText, questionIndex: currentQuestionIndex })
+      const fillerResult = answerMode === 'voice' ? countFillerWords(answerText) : { total: 0, found: {} }
+      addAnswer({ ...data, transcript: answerText, questionIndex: currentQuestionIndex, fillerCount: fillerResult.total, fillerWords: fillerResult.found })
       navigate('/results')
     } catch (err) {
       setGradeError(err.message || 'Grading failed. Please try again.')
@@ -266,6 +291,12 @@ export default function Interview() {
               >
                 ⌨️ Type
               </button>
+              <button
+                onClick={() => setAnswerMode('code')}
+                className={`flex-1 py-2.5 transition-colors ${answerMode === 'code' ? 'bg-accent-purple/20 text-accent-purple' : 'bg-white/5 text-white/40 hover:text-white/70'}`}
+              >
+                💻 Code
+              </button>
             </div>
           )}
 
@@ -292,6 +323,11 @@ export default function Interview() {
             />
           )}
 
+          {/* Code editor — always visible when code mode is active */}
+          {answerMode === 'code' && (
+            <CodeEditor value={codeAnswer} onChange={setCodeAnswer} />
+          )}
+
           {gradeError && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-red-400 text-sm">
               {gradeError}
@@ -312,9 +348,11 @@ export default function Interview() {
             <button
               onClick={handleStartAnswer}
               disabled={answerMode === 'voice' && !speechSupported}
-              className="w-full py-4 rounded-2xl font-bold text-base bg-accent-green text-white hover:bg-accent-green/90 active:scale-[0.98] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`w-full py-4 rounded-2xl font-bold text-base text-white active:scale-[0.98] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed ${
+                answerMode === 'code' ? 'bg-accent-purple hover:bg-accent-purple/90' : 'bg-accent-green hover:bg-accent-green/90'
+              }`}
             >
-              {answerMode === 'voice' ? '🎙️ Start Speaking' : '⌨️ Start Typing'}
+              {answerMode === 'voice' ? '🎙️ Start Speaking' : answerMode === 'code' ? '💻 Start Coding' : '⌨️ Start Typing'}
             </button>
           ) : (
             <button

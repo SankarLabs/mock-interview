@@ -12,11 +12,29 @@ const TYPE_CONFIG = {
   'Mixed':            { accent: 'border-accent-orange/40 bg-accent-orange/10 hover:bg-accent-orange/20', active: 'border-accent-orange bg-accent-orange/20 ring-2 ring-accent-orange/50', label: 'text-accent-orange', icon: '🎯' },
 }
 
+const DIFF_CONFIG = {
+  easy:   { label: 'Easy',   desc: 'Core concepts, beginner-friendly',     color: 'border-accent-green/40 bg-accent-green/10 hover:bg-accent-green/20',   active: 'border-accent-green bg-accent-green/20 ring-2 ring-accent-green/50 text-accent-green' },
+  medium: { label: 'Medium', desc: 'Mid-level depth & trade-offs',          color: 'border-accent-orange/40 bg-accent-orange/10 hover:bg-accent-orange/20', active: 'border-accent-orange bg-accent-orange/20 ring-2 ring-accent-orange/50 text-accent-orange' },
+  hard:   { label: 'Hard',   desc: 'Senior-level, edge cases, deep dives',  color: 'border-red-400/40 bg-red-400/10 hover:bg-red-400/20',                   active: 'border-red-400 bg-red-400/20 ring-2 ring-red-400/50 text-red-400' },
+}
+
+const COMPANY_ICONS = {
+  Google: '🔍', Meta: '👥', Amazon: '📦', Microsoft: '🪟',
+  Apple: '🍎', Netflix: '🎬', Startup: '🚀', Any: '🎯',
+}
+
 export default function Home() {
   const navigate = useNavigate()
-  const { setResumeText, setResumeParsed, jobDescription, setJobDescription, interviewType, setInterviewType, INTERVIEW_TYPES, resumeParsed } = useApp()
+  const {
+    setResumeText, setResumeParsed, jobDescription, setJobDescription,
+    interviewType, setInterviewType, INTERVIEW_TYPES, resumeParsed,
+    difficulty, setDifficulty, DIFFICULTIES,
+    company, setCompany, COMPANIES,
+  } = useApp()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [resumeTab, setResumeTab] = useState('pdf')
+  const [pastedText, setPastedText] = useState('')
 
   async function handleUpload(file) {
     setIsLoading(true)
@@ -31,6 +49,13 @@ export default function Home() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  function handlePastedText() {
+    const text = pastedText.trim()
+    if (!text) return
+    setResumeText(text)
+    setResumeParsed(parseResume(text))
   }
 
   return (
@@ -54,8 +79,52 @@ export default function Home() {
               <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">1. Upload Resume</p>
               <span className="text-white/30 text-xs">(optional)</span>
             </div>
-            <ResumeUpload onUpload={handleUpload} isLoading={isLoading} />
-            {error && <p className="mt-2 text-red-400 text-sm">{error}</p>}
+
+            {/* PDF / Paste tab toggle */}
+            <div className="flex rounded-xl overflow-hidden border border-white/10 text-sm font-medium mb-3">
+              <button
+                onClick={() => setResumeTab('pdf')}
+                className={`flex-1 py-2 transition-colors ${resumeTab === 'pdf' ? 'bg-accent-blue/20 text-accent-blue' : 'bg-white/5 text-white/40 hover:text-white/70'}`}
+              >
+                📄 PDF Upload
+              </button>
+              <button
+                onClick={() => setResumeTab('paste')}
+                className={`flex-1 py-2 transition-colors ${resumeTab === 'paste' ? 'bg-accent-blue/20 text-accent-blue' : 'bg-white/5 text-white/40 hover:text-white/70'}`}
+              >
+                🔗 LinkedIn / Text
+              </button>
+            </div>
+
+            {resumeTab === 'pdf' && (
+              <>
+                <ResumeUpload onUpload={handleUpload} isLoading={isLoading} />
+                {error && <p className="mt-2 text-red-400 text-sm">{error}</p>}
+              </>
+            )}
+
+            {resumeTab === 'paste' && (
+              <div className="space-y-2">
+                <p className="text-white/35 text-xs leading-relaxed">
+                  Open your LinkedIn profile → select all text (Ctrl+A / ⌘A) → copy → paste below.
+                  Also works with any resume text.
+                </p>
+                <textarea
+                  value={pastedText}
+                  onChange={e => setPastedText(e.target.value)}
+                  placeholder="Paste your LinkedIn profile or resume text here…"
+                  rows={6}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 text-white/90 text-sm p-3 resize-none placeholder:text-white/25 focus:outline-none focus:border-accent-blue/50 transition-colors"
+                />
+                <button
+                  onClick={handlePastedText}
+                  disabled={!pastedText.trim()}
+                  className="w-full py-2.5 rounded-xl bg-accent-blue text-white text-sm font-medium hover:bg-accent-blue/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Use This Text →
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Detected profile */}
@@ -87,6 +156,14 @@ export default function Home() {
                   ))}
                 </div>
               )}
+
+              {/* Find matching jobs — opens dedicated page */}
+              <button
+                onClick={() => navigate('/jobs')}
+                className="flex items-center gap-2 text-sm text-accent-green/80 hover:text-accent-green transition-colors pt-1"
+              >
+                🔍 Find matching job opportunities →
+              </button>
             </div>
           )}
 
@@ -115,7 +192,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* RIGHT — interview type + CTA */}
+        {/* RIGHT — interview type + difficulty + company + CTA */}
         <div className="lg:w-1/2 space-y-5">
           <div>
             <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">2. Choose Interview Type</p>
@@ -137,12 +214,63 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Difficulty */}
+          <div>
+            <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">3. Difficulty</p>
+            <div className="grid grid-cols-3 gap-2">
+              {DIFFICULTIES.map(d => {
+                const cfg = DIFF_CONFIG[d]
+                const isActive = difficulty === d
+                return (
+                  <button
+                    key={d}
+                    onClick={() => setDifficulty(d)}
+                    className={`rounded-xl border p-3 text-left transition-all duration-150 ${isActive ? cfg.active : cfg.color}`}
+                  >
+                    <p className={`font-semibold text-sm capitalize ${isActive ? '' : 'text-white/80'}`}>{cfg.label}</p>
+                    <p className="text-white/40 text-xs mt-0.5 leading-tight">{cfg.desc}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Company */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">4. Target Company</p>
+              <span className="text-white/30 text-xs">(optional)</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {COMPANIES.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setCompany(c)}
+                  className={`rounded-xl border px-2 py-2.5 text-center text-xs font-medium transition-all duration-150 ${
+                    company === c
+                      ? 'border-accent-blue bg-accent-blue/20 text-accent-blue ring-1 ring-accent-blue/40'
+                      : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <div className="text-base mb-0.5">{COMPANY_ICONS[c]}</div>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Summary card */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
             <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Your Session</p>
             <div className="flex items-center justify-between">
               <span className="text-white text-sm font-medium">{interviewType}</span>
               <span className="text-white/40 text-xs">4 questions · ~15 min</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/50 text-sm capitalize">{difficulty} difficulty</span>
+              <span className={`text-xs ${company !== 'Any' ? 'text-accent-blue' : 'text-white/30'}`}>
+                {company !== 'Any' ? `${COMPANY_ICONS[company]} ${company} style` : 'any company'}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-white/50 text-sm">

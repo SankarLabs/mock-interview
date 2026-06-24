@@ -3,6 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { useApp } from '../App.jsx'
 import { useTTS } from '../hooks/useTTS.js'
 
+async function fetchFollowUp(question, rubricMisses, transcript, interviewType) {
+  const response = await fetch('/api/get-followup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, rubricMisses, transcript, interviewType }),
+  })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || 'Failed to get follow-up')
+  return data
+}
+
 const GRADE_STYLES = {
   A: 'text-accent-green',
   B: 'text-accent-blue',
@@ -31,12 +42,34 @@ export default function Results() {
     resetSession,
   } = useApp()
 
-  const [showTranscript, setShowTranscript] = useState(false)
-  const { speak, stop: stopTTS, isSpeaking } = useTTS()
-
-  const isLastQuestion = currentQuestionIndex === questions.length - 1
   const currentAnswer = answers[currentQuestionIndex]
   const currentQuestion = questions[currentQuestionIndex]
+
+  const [showTranscript, setShowTranscript] = useState(false)
+  const [followUp, setFollowUp] = useState(null)
+  const [followUpLoading, setFollowUpLoading] = useState(false)
+  const [followUpError, setFollowUpError] = useState(null)
+  const { speak, stop: stopTTS, isSpeaking } = useTTS()
+
+  async function handleGetFollowUp() {
+    setFollowUpError(null)
+    setFollowUpLoading(true)
+    try {
+      const result = await fetchFollowUp(
+        currentQuestion?.question,
+        currentAnswer.rubricMisses,
+        currentAnswer.transcript,
+        interviewType,
+      )
+      setFollowUp(result)
+    } catch (err) {
+      setFollowUpError(err.message)
+    } finally {
+      setFollowUpLoading(false)
+    }
+  }
+
+  const isLastQuestion = currentQuestionIndex === questions.length - 1
 
   function handleNext() {
     setCurrentQuestionIndex(currentQuestionIndex + 1)
@@ -224,6 +257,58 @@ export default function Results() {
                 </button>
               </div>
               <p className="text-white/90 text-sm leading-relaxed">{currentAnswer.idealAnswer}</p>
+            </div>
+          )}
+
+          {/* Filler word counter */}
+          {currentAnswer.fillerCount > 0 && (
+            <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-yellow-400 text-xs font-semibold uppercase tracking-wider">Filler Words Detected</p>
+                <span className="text-yellow-400 font-bold text-sm">{currentAnswer.fillerCount} total</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(currentAnswer.fillerWords).map(([word, count]) => (
+                  <span key={word} className="px-2 py-0.5 rounded-full text-xs bg-yellow-400/10 text-yellow-300 border border-yellow-400/20">
+                    "{word}" ×{count}
+                  </span>
+                ))}
+              </div>
+              <p className="text-white/30 text-xs mt-2">Reducing filler words improves clarity and confidence in real interviews.</p>
+            </div>
+          )}
+
+          {/* Follow-up question */}
+          {currentAnswer.rubricMisses?.length > 0 && (
+            <div className="rounded-2xl border border-accent-purple/20 bg-accent-purple/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-accent-purple">🎯</span>
+                  <p className="text-accent-purple text-xs font-semibold uppercase tracking-wider">Interviewer Follow-up</p>
+                </div>
+                {!followUp && (
+                  <button
+                    onClick={handleGetFollowUp}
+                    disabled={followUpLoading}
+                    className="flex items-center gap-1.5 text-xs text-accent-purple/80 hover:text-accent-purple transition-colors disabled:opacity-50"
+                  >
+                    {followUpLoading
+                      ? <><span className="w-3 h-3 border border-accent-purple border-t-transparent rounded-full animate-spin" /> Loading…</>
+                      : 'Get follow-up question →'}
+                  </button>
+                )}
+              </div>
+              {followUpError && <p className="text-red-400 text-xs">{followUpError}</p>}
+              {followUp ? (
+                <div className="space-y-2">
+                  <p className="text-white text-sm font-medium leading-snug">"{followUp.followUpQuestion}"</p>
+                  {followUp.whyAsked && (
+                    <p className="text-white/40 text-xs italic">{followUp.whyAsked}</p>
+                  )}
+                </div>
+              ) : !followUpLoading && (
+                <p className="text-white/35 text-xs">Based on what you missed — see what a real interviewer would ask next.</p>
+              )}
             </div>
           )}
 

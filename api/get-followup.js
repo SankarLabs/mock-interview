@@ -1,32 +1,32 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { question, rubric, interviewType } = req.body
-  if (!question || !rubric) return res.status(400).json({ error: 'question and rubric are required' })
+  const { question, rubricMisses, transcript, interviewType } = req.body
+  if (!question || !rubricMisses?.length) return res.status(400).json({ error: 'question and rubricMisses are required' })
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'Missing OPENROUTER_API_KEY' })
 
-  const rubricList = rubric.map((r, i) => `${i + 1}. ${r}`).join('\n')
+  const missedList = rubricMisses.map((r, i) => `${i + 1}. ${r}`).join('\n')
+  const snippet = (transcript || '').slice(0, 600)
 
-  const prompt = `You are a helpful interview coach giving a candidate a nudge before they answer.
+  const prompt = `You are a technical interviewer. The candidate just answered a question but missed some key points.
 
 Interview type: ${interviewType}
-Question: "${question}"
-Grading rubric:
-${rubricList}
+Original question: "${question}"
+What the candidate missed:
+${missedList}
+Candidate's answer (excerpt): "${snippet}"
 
-Give exactly 3 short hints to help the candidate structure a strong answer.
+Ask ONE focused follow-up question that naturally probes their understanding of the weakest gap.
 Rules:
-- Do NOT give the answer away or provide example code/architecture
-- Each hint is 1 sentence max
-- Nudge toward the rubric points without naming them directly
-- Use plain language, no jargon
+- Sound like a real interviewer continuing the conversation, not a teacher correcting them
+- Do NOT reveal what they missed directly
+- 1–2 sentences max
+- Make it feel like a natural "tell me more about..." or "how would you handle..." probe
 
-Return exactly 3 hints as a numbered list:
-1. [hint one]
-2. [hint two]
-3. [hint three]`
+Return exactly this JSON:
+{"followUpQuestion": "...", "whyAsked": "...one short sentence on what this probes..."}`
 
   const MODELS = [
     'meta-llama/llama-3.3-70b-instruct:free',
@@ -60,8 +60,8 @@ Return exactly 3 hints as a numbered list:
         body: JSON.stringify({
           model: MODELS[i],
           messages: [{ role: 'user', content: prompt }],
-          temperature: 0.5,
-          max_tokens: 400,
+          temperature: 0.6,
+          max_tokens: 300,
         }),
       })
 
@@ -78,51 +78,29 @@ Return exactly 3 hints as a numbered list:
       const data = await response.json()
       const candidate = data.choices?.[0]?.message?.content?.trim()
       if (candidate) { content = candidate; break }
-      console.warn(`[${MODELS[i]}] returned empty content, trying next model`)
       lastError = 'Empty response from AI'
     }
 
     if (!content) return res.status(502).json({ error: lastError || 'All models returned empty responses' })
 
-    // Try JSON first (strip markdown fences)
-    let parsed = null
     const fenceStripped = content.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
+    let parsed = null
     try { parsed = JSON.parse(fenceStripped) } catch {}
-    if (!parsed?.hints?.length) {
+    if (!parsed?.followUpQuestion) {
       const jsonMatch = content.match(/\{[\s\S]*?\}/)
       if (jsonMatch) try { parsed = JSON.parse(jsonMatch[0]) } catch {}
     }
-
-    // Fall back: extract numbered/bulleted lines, skip intro/filler lines
-    if (!parsed?.hints?.length) {
-      const introPattern = /^(here are|below are|sure|of course|certainly|i'll|these hints|hint)/i
-      const lines = content
-        .split('\n')
-        .map(l => l.replace(/^[\s\-\*\•\d\.\)\:]+/, '').trim())
-        .filter(l => l.length >= 8 && !introPattern.test(l))
-      if (lines.length >= 1) {
-        parsed = { hints: lines.slice(0, 3) }
-      }
+    if (!parsed?.followUpQuestion) {
+      const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 10)
+      if (lines.length) parsed = { followUpQuestion: lines[0], whyAsked: lines[1] || '' }
     }
 
-    // Last resort: treat entire response as one hint split by punctuation
-    if (!parsed?.hints?.length) {
-      const chunks = content
-        .split(/[.\n]/)
-        .map(s => s.trim())
-        .filter(s => s.length >= 8)
-        .slice(0, 3)
-      if (chunks.length) parsed = { hints: chunks }
-    }
-
-    if (!parsed?.hints?.length) {
-      console.error('Could not parse hints from:', content)
+    if (!parsed?.followUpQuestion) {
       return res.status(502).json({ error: 'AI returned unreadable response. Please retry.' })
     }
 
     return res.status(200).json(parsed)
   } catch (err) {
-    if (err instanceof SyntaxError) return res.status(502).json({ error: 'AI returned invalid JSON' })
     return res.status(500).json({ error: err.message })
   }
 }
